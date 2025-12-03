@@ -35,54 +35,54 @@ def api_edit_image(fg, bg, x, y, scale):
 
 # --- Giao dien Gradio ---
 
-with gr.Blocks(title="Do an RemoveBG") as demo:
+with gr.Blocks(title="Đồ án DataMining RemoveBG") as demo:
     
-    gr.HTML("<h1 style='text-align: center; width: 100%;'>Demo Ung dung Tach nen</h1>")
-    gr.Markdown("Giao dien Front-end ket noi voi Server.")
+    gr.HTML("<h1 style='text-align: center; width: 100%;'>Demo Ứng Dụng Tách Nền RemoveBG</h1>")
+    gr.Markdown("_(Giao diện Front-end kết nối với Server)_")
 
     # Tab 1: Chuc nang tach nen
-    with gr.Tab("Tach nen"):
+    with gr.Tab("Tách nền"):
         with gr.Row():
             with gr.Column():
                 gr.Markdown("Input")
                 # Cho phep upload hoac chup anh
-                input_img = gr.Image(sources=["upload", "webcam"], label="Anh dau vao", type="pil")
-                btn_process = gr.Button("Thuc hien", variant="primary")
+                input_img = gr.Image(sources=["upload", "webcam"], label="Ảnh đầu vào", type="pil")
+                btn_process = gr.Button("Thực hiện", variant="primary")
             
             with gr.Column():
                 gr.Markdown("Output")
-                output_img = gr.Image(label="Ket qua", type="pil", format="png", interactive=False)
+                output_img = gr.Image(label="Kết quả", type="pil", format="png", interactive=False)
 
     # Tab 2: Chuc nang ghep nen
-    with gr.Tab("Ghep nen"):
+    with gr.Tab("Ghép nền"):
         with gr.Row():
             with gr.Column():
                 # Input lay tu Tab 1
-                img_fg = gr.Image(label="Anh da tach", type="pil")
-                img_bg = gr.Image(label="Anh nen moi", type="pil")
-                btn_merge = gr.Button("Ghep anh")
+                img_fg = gr.Image(label="Ảnh đã tách", type="pil")
+                img_bg = gr.Image(label="Ảnh nền mới", type="pil")
+                btn_merge = gr.Button("Ghép ảnh")
             
             with gr.Column():
-                output_merge = gr.Image(label="Anh sau khi ghep", type="pil")
+                output_merge = gr.Image(label="Ảnh sau khi ghép", type="pil")
 
     # Tab 3: Chinh sua nang cao
-    with gr.Tab("Chinh sua (Edit)"):
+    with gr.Tab("Chỉnh sửa (Edit)"):
         with gr.Row():
             with gr.Column():
-                gr.Markdown("Dieu chinh vi tri")
+                gr.Markdown("Điều chỉnh vị trí")
                 
                 # Load lai anh de thao tac
-                edit_fg = gr.Image(label="Vat the", type="pil", height=200)
-                edit_bg = gr.Image(label="Nen", type="pil", height=200)
+                edit_fg = gr.Image(label="Vật thể", type="pil", height=200)
+                edit_bg = gr.Image(label="Nền", type="pil", height=200)
                 
                 slider_scale = gr.Slider(0.1, 2.0, value=1.0, step=0.1, label="Scale")
                 slider_x = gr.Number(value=0, label="Toa do X")
                 slider_y = gr.Number(value=0, label="Toa do Y")
                 
-                btn_apply = gr.Button("Cap nhat")
+                btn_apply = gr.Button("Cập nhật ảnh")
             
             with gr.Column():
-                output_final = gr.Image(label="Ket qua hien thi", type="pil")
+                output_final = gr.Image(label="Kết quả hiển thị", type="pil")
 
     # --- Xu ly su kien ---
     
