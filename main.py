@@ -1,111 +1,102 @@
 import gradio as gr
-from PIL import Image
+import torch
+import torch.nn as nn
+from PIL import Image, ImageFilter
 import numpy as np
+import segmentation_models_pytorch as smp
 
-# --- Phan xu ly Logic (Mockup cho BE) ---
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL_PATH = r"D:\GitHub\RemoveBG\model\unet_preprocessing1.pth"
+INPUT_SIZE = 256
+
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD  = [0.229, 0.224, 0.225]
+
+model = smp.Unet(
+    encoder_name="resnet18",
+    encoder_weights=None,
+    in_channels=3,
+    classes=1,
+    activation=None
+).to(DEVICE)
+
+ckpt = torch.load(MODEL_PATH, map_location=DEVICE)
+model.load_state_dict(ckpt["model_state_dict"], strict=True)
+model.eval()
+print("smp.Unet(resnet18) loaded")
+
+def preprocess(img: Image.Image) -> torch.Tensor:
+    img = img.convert("RGB").resize((INPUT_SIZE, INPUT_SIZE), Image.BILINEAR)
+    arr = np.array(img).astype(np.float32) / 255.0
+    t = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
+
+    mean = torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1)
+    std  = torch.tensor(IMAGENET_STD).view(1, 3, 1, 1)
+    t = (t - mean) / std
+    return t.to(DEVICE)
 
 def api_remove_bg(img):
-    # Ham nay gia lap viec goi API xoa nen
     if img is None:
+        return None, None, None, None
+
+    with torch.no_grad():
+        x = preprocess(img)
+        logits = model(x)
+        prob = torch.sigmoid(logits)[0, 0].cpu().numpy()
+
+    gamma = 0.8
+    prob = np.clip(prob, 0.0, 1.0) ** gamma
+
+    alpha = Image.fromarray((prob * 255).astype(np.uint8)).resize(img.size, Image.BILINEAR)
+    alpha = alpha.filter(ImageFilter.GaussianBlur(radius=1.2))
+
+    a = np.array(alpha).astype(np.float32) / 255.0
+    t_low, t_high = 0.12, 0.85
+    a = np.clip((a - t_low) / (t_high - t_low + 1e-6), 0.0, 1.0)
+
+    shrink_px = 1
+    for _ in range(shrink_px):
+        a_pad = np.pad(a, ((1,1),(1,1)), mode="edge")
+        a = np.minimum.reduce([
+            a_pad[0:-2,0:-2], a_pad[0:-2,1:-1], a_pad[0:-2,2:],
+            a_pad[1:-1,0:-2], a_pad[1:-1,1:-1], a_pad[1:-1,2:],
+            a_pad[2:  ,0:-2], a_pad[2:  ,1:-1], a_pad[2:  ,2:],
+        ])
+
+    alpha_final = (a * 255).astype(np.uint8)
+
+    img_rgba = img.convert("RGBA")
+    out = np.array(img_rgba)
+    out[..., 3] = alpha_final
+    fg_clean = Image.fromarray(out)
+
+    return fg_clean.copy(), fg_clean.copy(), fg_clean.copy(), fg_clean.copy()
+
+def api_merge_bg(fg_state, bg):
+    if fg_state is None or bg is None:
         return None
-    
-    # In ra log de debug
-    print("Call API: Remove BG")
-    
-    # TODO: Sau nay them code request.post o day
-    return img
+    return Image.alpha_composite(
+        bg.convert("RGBA").resize(fg_state.size),
+        fg_state.convert("RGBA")
+    ).copy()
 
-def api_merge_bg(fg, bg):
-    if fg is None:
-        return None
-    
-    print("Call API: Merge Background")
-    
-    # Neu chua co bg thi tra ve anh goc
-    if bg is None:
-        return fg
-        
-    return bg
+with gr.Blocks(title="RemoveBG - UNet") as demo:
+    gr.HTML("<h2 style='text-align:center'>Ứng dụng Xóa Background (U-Net)</h2>")
+    fg_state = gr.State()
 
-def api_edit_image(fg, bg, x, y, scale):
-    print(f"Call API Edit: x={x}, y={y}, scale={scale}")
-    # Tra ve bg de test giao dien
-    return bg
-
-
-# --- Giao dien Gradio ---
-
-with gr.Blocks(title="Đồ án DataMining RemoveBG") as demo:
-    
-    gr.HTML("<h1 style='text-align: center; width: 100%;'>Demo Ứng Dụng Tách Nền RemoveBG</h1>")
-    gr.Markdown("_(Giao diện Front-end kết nối với Server)_")
-
-    # Tab 1: Chuc nang tach nen
     with gr.Tab("Tách nền"):
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("Input")
-                # Cho phep upload hoac chup anh
-                input_img = gr.Image(sources=["upload", "webcam"], label="Ảnh đầu vào", type="pil")
-                btn_process = gr.Button("Thực hiện", variant="primary")
-            
-            with gr.Column():
-                gr.Markdown("Output")
-                output_img = gr.Image(label="Kết quả", type="pil", format="png", interactive=False)
+        input_img = gr.Image(type="pil", label="Ảnh đầu vào")
+        output_img = gr.Image(type="pil", label="Ảnh đã tách")
+        btn_process = gr.Button("Tách nền", variant="primary")
 
-    # Tab 2: Chuc nang ghep nen
     with gr.Tab("Ghép nền"):
-        with gr.Row():
-            with gr.Column():
-                # Input lay tu Tab 1
-                img_fg = gr.Image(label="Ảnh đã tách", type="pil")
-                img_bg = gr.Image(label="Ảnh nền mới", type="pil")
-                btn_merge = gr.Button("Ghép ảnh")
-            
-            with gr.Column():
-                output_merge = gr.Image(label="Ảnh sau khi ghép", type="pil")
+        img_fg = gr.Image(type="pil", label="Foreground")
+        img_bg = gr.Image(type="pil", label="Background")
+        output_merge = gr.Image(type="pil", label="Ảnh ghép")
+        btn_merge = gr.Button("Ghép ảnh")
 
-    # Tab 3: Chinh sua nang cao
-    with gr.Tab("Chỉnh sửa (Edit)"):
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("Điều chỉnh vị trí")
-                
-                # Load lai anh de thao tac
-                edit_fg = gr.Image(label="Vật thể", type="pil", height=200)
-                edit_bg = gr.Image(label="Nền", type="pil", height=200)
-                
-                slider_scale = gr.Slider(0.1, 2.0, value=1.0, step=0.1, label="Scale")
-                slider_x = gr.Number(value=0, label="Toa do X")
-                slider_y = gr.Number(value=0, label="Toa do Y")
-                
-                btn_apply = gr.Button("Cập nhật ảnh")
-            
-            with gr.Column():
-                output_final = gr.Image(label="Kết quả hiển thị", type="pil")
-
-    # --- Xu ly su kien ---
-    
-    # 1. Click nut tach nen
-    btn_process.click(
-        fn=api_remove_bg, 
-        inputs=input_img, 
-        outputs=[output_img, img_fg, edit_fg] 
-    )
-
-    # 2. Click nut ghep nen
-    btn_merge.click(
-        fn=api_merge_bg,
-        inputs=[img_fg, img_bg],
-        outputs=output_merge
-    )
-
-    # 3. Click nut edit
-    btn_apply.click(
-        fn=api_edit_image,
-        inputs=[edit_fg, edit_bg, slider_x, slider_y, slider_scale],
-        outputs=output_final
-    )
+    btn_process.click(api_remove_bg, input_img, [output_img, img_fg, img_fg, fg_state])
+    btn_merge.click(api_merge_bg, [fg_state, img_bg], output_merge)
 
 if __name__ == "__main__":
     demo.launch()
